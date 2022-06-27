@@ -1,0 +1,408 @@
+{
+  "pipelineSpec": {
+    "components": {
+      "comp-comet-logger-component": {
+        "executorLabel": "exec-comet-logger-component",
+        "inputDefinitions": {
+          "parameters": {
+            "project_name": {
+              "type": "STRING"
+            },
+            "timeout": {
+              "type": "INT"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "Output": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-data-preprocessing": {
+        "executorLabel": "exec-data-preprocessing",
+        "outputDefinitions": {
+          "artifacts": {
+            "x_test_path": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "x_train_path": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "y_test_path": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "y_train_path": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-model-evaluation": {
+        "executorLabel": "exec-model-evaluation",
+        "inputDefinitions": {
+          "artifacts": {
+            "model_path": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-model-training": {
+        "executorLabel": "exec-model-training",
+        "inputDefinitions": {
+          "artifacts": {
+            "x_test_path": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "x_train_path": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "y_test_path": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "y_train_path": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "batch_size": {
+              "type": "INT"
+            },
+            "dropout": {
+              "type": "DOUBLE"
+            },
+            "epochs": {
+              "type": "INT"
+            },
+            "layer_1_size": {
+              "type": "INT"
+            },
+            "layer_2_size": {
+              "type": "INT"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "model_path": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      }
+    },
+    "deploymentSpec": {
+      "executors": {
+        "exec-comet-logger-component": {
+          "container": {
+            "args": [
+              "--timeout",
+              "{{$.inputs.parameters['timeout']}}",
+              "--project-name",
+              "{{$.inputs.parameters['project_name']}}",
+              "----output-paths",
+              "{{$.outputs.artifacts['Output'].path}}"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "(PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'comet_ml' 'google-cloud-aiplatform' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'comet_ml' 'google-cloud-aiplatform' --user) && \"$0\" \"$@\"",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n",
+              "def _comet_logger_component(\n    timeout,\n    workspace=None,\n    project_name=None,\n):\n    # type: (int, Optional[str], Optional[str]) -> None\n    \"\"\"The actual top-level code Vertex component\"\"\"\n\n    # This function code run is copied and ran by Vertex. We cannot access anything from outside so\n    # we need to re-import everything\n\n    from comet_ml import ExistingExperiment\n    from comet_ml.integration.vertex import _comet_logger_implementation\n\n    # These variables are injected at run time by Vertex\n    pipeline_run_name = \"{{$.pipeline_job_name}}\"\n    pipeline_task_id = \"{{$.pipeline_task_uuid}}\"\n    resource_name = \"{{$.pipeline_job_resource_name}}\"\n\n    # Create an experiment with your api key\n    experiment = ExistingExperiment(\n        project_name=project_name,\n        workspace=workspace,\n        log_git_metadata=False,\n        log_git_patch=False,\n        experiment_key=pipeline_run_name.replace('-', '')\n    )\n\n    _comet_logger_implementation(\n        experiment, pipeline_run_name, pipeline_task_id, resource_name, timeout\n    )\n\n    return None\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Comet logger component', description='The actual top-level code Vertex component')\n_parser.add_argument(\"--timeout\", dest=\"timeout\", type=int, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--workspace\", dest=\"workspace\", type=str, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--project-name\", dest=\"project_name\", type=str, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"----output-paths\", dest=\"_output_paths\", type=str, nargs=1)\n_parsed_args = vars(_parser.parse_args())\n_output_files = _parsed_args.pop(\"_output_paths\", [])\n\n_outputs = _comet_logger_component(**_parsed_args)\n\n_outputs = [_outputs]\n\n_output_serializers = [\n    str,\n\n]\n\nimport os\nfor idx, output_file in enumerate(_output_files):\n    try:\n        os.makedirs(os.path.dirname(output_file))\n    except OSError:\n        pass\n    with open(output_file, 'w') as f:\n        f.write(_output_serializers[idx](_outputs[idx]))\n"
+            ],
+            "env": [
+              {
+                "name": "COMET_API_KEY",
+                "value": "e1OrBiag5jinfb7pMlzbXyg3P"
+              }
+            ],
+            "image": "python:3.7"
+          }
+        },
+        "exec-data-preprocessing": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "data_preprocessing"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'comet_ml' 'kfp' 'tensorflow' 'kfp==1.8.12' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef data_preprocessing(x_train_path: OutputPath(\"Dataset\"),\n                       y_train_path: OutputPath(\"Dataset\"),\n                       x_test_path: OutputPath(\"Dataset\"),\n                       y_test_path: OutputPath(\"Dataset\")):\n    import comet_ml\n    import comet_ml.integration.vertex\n    import tensorflow as tf\n    import pickle\n    from tensorflow.keras.utils import to_categorical\n\n    experiment = comet_ml.Experiment()\n    pipeline_run_name = \"{{$.pipeline_job_name}}\"\n    pipeline_task_name = \"{{$.pipeline_task_name}}\"\n    pipeline_task_id = \"{{$.pipeline_task_uuid}}\"\n\n    experiment = comet_ml.integration.vertex.initialize_comet_logger(\n        experiment, pipeline_run_name, pipeline_task_name, pipeline_task_id\n    )\n\n    mnist = tf.keras.datasets.mnist\n\n    num_classes = 10\n\n    # the data, shuffled and split between train and test sets\n    (x_train, y_train), (x_test, y_test) = mnist.load_data()\n\n\n    x_train = x_train.reshape(60000, 784)\n    x_test = x_test.reshape(10000, 784)\n    x_train = x_train.astype(\"float32\")\n    x_test = x_test.astype(\"float32\")\n    x_train /= 255\n    x_test /= 255\n    print(x_train.shape[0], \"train samples\")\n    print(x_test.shape[0], \"test samples\")\n\n    # convert class vectors to binary class matrices\n    y_train = to_categorical(y_train, num_classes)\n    y_test = to_categorical(y_test, num_classes)\n\n    # Write output data\n    with open(x_train_path, 'wb') as f:\n        pickle.dump(x_train, f)\n\n    with open(y_train_path, 'wb') as f:\n        pickle.dump(y_train, f)\n\n    with open(x_test_path, 'wb') as f:\n        pickle.dump(x_test, f)\n\n    with open(y_test_path, 'wb') as f:\n        pickle.dump(y_test, f)\n\n"
+            ],
+            "env": [
+              {
+                "name": "COMET_API_KEY",
+                "value": "e1OrBiag5jinfb7pMlzbXyg3P"
+              },
+              {
+                "name": "COMET_PROJECT_NAME",
+                "value": "demo-kfp-pipeline"
+              }
+            ],
+            "image": "python:3.7"
+          }
+        },
+        "exec-model-evaluation": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "model_evaluation"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'comet_ml' 'kfp' 'tensorflow' 'kfp==1.8.12' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef model_evaluation(model_path: InputPath(\"Model\")):\n    import time\n    import math\n    import random\n\n    import comet_ml\n    import comet_ml.integration.vertex\n    import tensorflow as tf\n\n    experiment = comet_ml.Experiment()\n    pipeline_run_name = \"{{$.pipeline_job_name}}\"\n    pipeline_task_name = \"{{$.pipeline_task_name}}\"\n    pipeline_task_id = \"{{$.pipeline_task_uuid}}\"\n\n    experiment = comet_ml.integration.vertex.initialize_comet_logger(\n        experiment, pipeline_run_name, pipeline_task_name, pipeline_task_id\n    )\n\n    model = tf.keras.models.load_model(model_path)\n\n    for i in range(60):\n        experiment.log_metric(\"web metric (US)\", math.log(i + random.random()))\n        experiment.log_metric(\"BOE metric (US)\", math.log(i + random.random()))\n        experiment.log_metric(\"web metric (all)\", math.log(i + random.random()))\n        experiment.log_metric(\"BOE metric (all)\", math.log(i + random.random()))\n        time.sleep(0.1)\n    experiment.end()\n\n"
+            ],
+            "env": [
+              {
+                "name": "COMET_API_KEY",
+                "value": "e1OrBiag5jinfb7pMlzbXyg3P"
+              },
+              {
+                "name": "COMET_PROJECT_NAME",
+                "value": "demo-kfp-pipeline"
+              }
+            ],
+            "image": "python:3.7"
+          }
+        },
+        "exec-model-training": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "model_training"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'comet_ml' 'kfp' 'tensorflow' 'kfp==1.8.12' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef model_training(batch_size: int,\n                   epochs: int,\n                   layer_1_size: int,\n                   layer_2_size: int,\n                   dropout: float,\n                   x_train_path: InputPath(\"Dataset\"),\n                   y_train_path: InputPath(\"Dataset\"),\n                   x_test_path: InputPath(\"Dataset\"),\n                   y_test_path: InputPath(\"Dataset\"),\n                   model_path: OutputPath(\"Model\")):\n    import comet_ml\n    import comet_ml.integration.vertex\n    import pickle\n    import tensorflow as tf\n    from tensorflow.keras.models import Sequential\n    from tensorflow.keras.layers import Flatten, Dense, Dropout\n\n    experiment = comet_ml.Experiment()\n    pipeline_run_name = \"{{$.pipeline_job_name}}\"\n    pipeline_task_name = \"{{$.pipeline_task_name}}\"\n    pipeline_task_id = \"{{$.pipeline_task_uuid}}\"\n\n    experiment = comet_ml.integration.vertex.initialize_comet_logger(\n        experiment, pipeline_run_name, pipeline_task_name, pipeline_task_id\n    )\n\n    # Read data\n    with open(x_train_path, 'rb') as f:\n        x_train = pickle.load(f)\n\n    with open(y_train_path, 'rb') as f:\n        y_train = pickle.load(f)\n\n    with open(x_test_path, 'rb') as f:\n        x_test = pickle.load(f)\n\n    with open(y_test_path, 'rb') as f:\n        y_test = pickle.load(f)\n\n    model = Sequential([\n      Flatten(input_shape=(784, )),\n      Dense(layer_1_size, activation='relu'),\n      Dense(layer_2_size, activation='relu'),\n      Dropout(dropout),\n      Dense(10)\n    ])\n\n    loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)\n\n    model.compile(optimizer='adam', \n                  loss=loss_fn,\n                  metrics=['accuracy'])\n\n    model.fit(\n        x_train,\n        y_train,\n        batch_size=batch_size,\n        epochs=epochs,\n        validation_data=(x_test, y_test),\n    )\n\n    model.save(model_path)\n\n"
+            ],
+            "env": [
+              {
+                "name": "COMET_API_KEY",
+                "value": "e1OrBiag5jinfb7pMlzbXyg3P"
+              },
+              {
+                "name": "COMET_PROJECT_NAME",
+                "value": "demo-kfp-pipeline"
+              }
+            ],
+            "image": "python:3.7"
+          }
+        }
+      }
+    },
+    "pipelineInfo": {
+      "name": "mnist-keras-pipeline"
+    },
+    "root": {
+      "dag": {
+        "tasks": {
+          "comet-logger-component": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-comet-logger-component"
+            },
+            "inputs": {
+              "parameters": {
+                "project_name": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "demo-kfp-pipeline"
+                    }
+                  }
+                },
+                "timeout": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "intValue": "30"
+                    }
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "comet-logger-component"
+            }
+          },
+          "data-preprocessing": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-data-preprocessing"
+            },
+            "taskInfo": {
+              "name": "data-preprocessing"
+            }
+          },
+          "model-evaluation": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-model-evaluation"
+            },
+            "dependentTasks": [
+              "model-training"
+            ],
+            "inputs": {
+              "artifacts": {
+                "model_path": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "model_path",
+                    "producerTask": "model-training"
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "model-evaluation"
+            }
+          },
+          "model-training": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-model-training"
+            },
+            "dependentTasks": [
+              "data-preprocessing"
+            ],
+            "inputs": {
+              "artifacts": {
+                "x_test_path": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "x_test_path",
+                    "producerTask": "data-preprocessing"
+                  }
+                },
+                "x_train_path": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "x_train_path",
+                    "producerTask": "data-preprocessing"
+                  }
+                },
+                "y_test_path": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "y_test_path",
+                    "producerTask": "data-preprocessing"
+                  }
+                },
+                "y_train_path": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "y_train_path",
+                    "producerTask": "data-preprocessing"
+                  }
+                }
+              },
+              "parameters": {
+                "batch_size": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "intValue": "64"
+                    }
+                  }
+                },
+                "dropout": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "doubleValue": 0.2
+                    }
+                  }
+                },
+                "epochs": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "intValue": "20"
+                    }
+                  }
+                },
+                "layer_1_size": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "intValue": "128"
+                    }
+                  }
+                },
+                "layer_2_size": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "intValue": "128"
+                    }
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "model-training"
+            }
+          }
+        }
+      }
+    },
+    "schemaVersion": "2.0.0",
+    "sdkVersion": "kfp-1.8.12"
+  },
+  "runtimeConfig": {}
+}
